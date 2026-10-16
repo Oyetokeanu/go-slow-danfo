@@ -1,183 +1,23 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Go-Slow Danfo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap" rel="stylesheet">
 <style>
-:root{--road:#23262b;--danfo:#f5c518;--paint:#e9e6d8;--brake:#d64545;--ink:#14161a}
+:root{color-scheme:dark;--navy:#0d1226;--line:#1f3a7a;--yellow:#ffd21f;--ink:#f3f5ff;--page:#05070f;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:var(--ink);color:var(--paint);font-family:Verdana,Geneva,sans-serif;display:flex;flex-direction:column;align-items:center;gap:12px;padding:12px}
-.startng-card{align-self:flex-start;display:flex;align-items:center;gap:12px;padding:6px 14px 6px 6px;border-radius:999px;background:#292a23;color:#fffefa}
-.startng-card img{width:44px;height:44px;border-radius:50%;background:#d8fd71}
-.startng-card b{display:block;font-size:15px}
-.startng-card span{font-size:12px;opacity:.7}
-.startng-card button{margin-left:6px;border:0;border-radius:999px;padding:6px 12px;background:#d8fd71;font-weight:700;cursor:pointer}
-#stage{position:relative;width:min(92vw,360px)}
-canvas{display:block;width:100%;aspect-ratio:3/5;background:var(--road);border-radius:6px;touch-action:none}
-#hud{display:flex;justify-content:space-between;width:100%;font-weight:700;font-size:15px}
-#panel{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;text-align:center;background:rgba(20,22,26,.86);border-radius:6px}
-#panel h1{margin:0;font-size:30px;color:var(--danfo);letter-spacing:.5px}
-#panel p{margin:0;font-size:14px;line-height:1.5;max-width:30ch}
-#panel ol{margin:0;padding:0 0 0 22px;font-size:13px;text-align:left}
-button.go{border:0;border-radius:6px;padding:12px 26px;background:var(--danfo);color:var(--ink);font:700 17px Verdana,sans-serif;cursor:pointer}
-button.go:focus-visible,.startng-card button:focus-visible{outline:3px solid var(--paint);outline-offset:2px}
-</style>
-</head>
-<body>
-<div class="startng-card" id="player-card" hidden>
-  <img id="player-face" alt="">
-  <div><b id="player-name"></b><span id="player-account"></span></div>
-  <button id="player-sign-in" hidden>Sign in</button>
-</div>
-<div id="hud"><span>Passengers: <span id="hp">0</span></span><span><span id="hd">0</span> m</span></div>
-<div id="stage">
-  <canvas id="c" width="360" height="600" aria-label="Go-Slow Danfo game"></canvas>
-  <div id="panel">
-    <h1 id="title">Go-Slow Danfo</h1>
-    <p id="msg">Pick up passengers and weave through the traffic. Left and right arrow keys, or tap the sides of the road.</p>
-    <ol id="board" hidden></ol>
-    <button class="go" id="go">Start driving</button>
-  </div>
-</div>
-<script>
-const START_NG = 'https://start.ng';
-let frame;
-function connectFrame() {
-  frame ??= new Promise((resolve, reject) => {
-    const el = document.createElement('iframe');
-    el.src = `${START_NG}/connect`; el.hidden = true;
-    el.onload = () => resolve(el); el.onerror = reject;
-    document.body.append(el);
-  });
-  return frame;
-}
-async function askStartNg(message, replyType, timeoutMs = 5000) {
-  const el = await connectFrame();
-  return new Promise((resolve) => {
-    const requestId = Math.random().toString(36).slice(2);
-    const done = (r) => { clearTimeout(timer); removeEventListener('message', onMessage); resolve(r); };
-    const timer = setTimeout(() => done(null), timeoutMs);
-    function onMessage(e) {
-      if (e.origin !== START_NG || e.source !== el.contentWindow) return;
-      if (e.data?.type === replyType && e.data.requestId === requestId) done(e.data);
-    }
-    addEventListener('message', onMessage);
-    el.contentWindow.postMessage({ ...message, requestId }, START_NG);
-  });
-}
-
-let who = null;
-async function showPlayer() {
-  const reply = await askStartNg({ type: 'startng:whoami' }, 'startng:user');
-  who = reply;
-  const p = reply?.user ?? reply?.guest;
-  if (!p) return;
-  document.getElementById('player-face').src = p.face;
-  document.getElementById('player-name').textContent = p.name;
-  document.getElementById('player-account').textContent = reply.user?.account ? '@' + reply.user.account : 'Not signed in';
-  const btn = document.getElementById('player-sign-in');
-  btn.hidden = !!reply.user;
-  btn.onclick = () => (location.href = `${START_NG}/?return_to=${encodeURIComponent(location.origin + location.pathname)}`);
-  document.getElementById('player-card').hidden = false;
-}
-showPlayer();
-addEventListener('focus', showPlayer);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) showPlayer(); });
-
-const cv = document.getElementById('c'), g = cv.getContext('2d');
-const W = 360, H = 600, LANE = W / 3, PY = 490, PH = 74, PW = 46;
-const $ = (id) => document.getElementById(id);
-let lane, items, speed, spawnIn, dist, pax, offset, running, last, targetX, px;
-
-function reset() {
-  lane = 1; px = targetX = LANE * 1.5; items = []; speed = 230; spawnIn = 0.6;
-  dist = 0; pax = 0; offset = 0; $('hp').textContent = 0; $('hd').textContent = 0;
-}
-function spawn() {
-  const free = Math.floor(Math.random() * 3);
-  for (let l = 0; l < 3; l++) {
-    if (l === free) { if (Math.random() < 0.55) items.push({ l, y: -60, t: 'p', h: 40 }); continue; }
-    if (Math.random() < 0.7) items.push({ l, y: -90, t: 'c', h: 78, hue: Math.random() < 0.5 ? '#5b7fa6' : '#c4c0b2' });
-  }
-}
-function step(dt) {
-  speed = Math.min(520, speed + 6 * dt);
-  dist += speed * dt / 12;
-  offset = (offset + speed * dt) % 60;
-  px += (targetX - px) * Math.min(1, dt * 14);
-  spawnIn -= dt;
-  if (spawnIn <= 0) { spawn(); spawnIn = Math.max(0.42, 1.0 - dist / 3000); }
-  for (const it of items) it.y += speed * dt;
-  for (const it of items) {
-    if (it.l !== lane || Math.abs(it.y - PY) > (it.h + PH) / 2 - 6) continue;
-    if (it.t === 'p') { it.gone = true; pax++; $('hp').textContent = pax; }
-    else { over(); return; }
-  }
-  items = items.filter((it) => !it.gone && it.y < H + 100);
-  $('hd').textContent = Math.floor(dist);
-}
-function draw() {
-  g.fillStyle = '#23262b'; g.fillRect(0, 0, W, H);
-  g.fillStyle = '#e9e6d8';
-  for (let i = 1; i < 3; i++) for (let y = -60 + offset; y < H; y += 60) g.fillRect(i * LANE - 2, y, 4, 30);
-  for (const it of items) {
-    const x = it.l * LANE + LANE / 2;
-    if (it.t === 'p') {
-      g.fillStyle = '#f2f2f2'; g.beginPath(); g.arc(x, it.y - 10, 9, 0, 7); g.fill();
-      g.fillStyle = '#1f9d55'; g.fillRect(x - 8, it.y, 16, 22);
-    } else {
-      g.fillStyle = it.hue; g.fillRect(x - 24, it.y - it.h / 2, 48, it.h);
-      g.fillStyle = '#14161a'; g.fillRect(x - 18, it.y - it.h / 2 + 10, 36, 16);
-    }
-  }
-  g.fillStyle = '#f5c518'; g.fillRect(px - PW / 2, PY - PH / 2, PW, PH);
-  g.fillStyle = '#14161a'; g.fillRect(px - PW / 2, PY - 4, PW, 12);
-  g.fillRect(px - 17, PY - PH / 2 + 8, 34, 14);
-}
-function loop(t) {
-  if (!running) return;
-  const dt = Math.min(0.05, (t - last) / 1000); last = t;
-  step(dt); if (running) { draw(); requestAnimationFrame(loop); }
-}
-function begin() {
-  reset(); running = true; $('panel').hidden = true; last = performance.now();
-  requestAnimationFrame(loop);
-}
-function move(d) { if (running) { lane = Math.max(0, Math.min(2, lane + d)); targetX = lane * LANE + LANE / 2; } }
-async function over() {
-  running = false; draw();
-  const stats = { passengers: pax, distance: Math.floor(dist) };
-  $('title').textContent = 'Go-slow!';
-  $('msg').textContent = `You carried ${pax} passenger${pax === 1 ? '' : 's'} over ${stats.distance} m.`;
-  $('go').textContent = 'Drive again';
-  $('board').hidden = true; $('panel').hidden = false;
-  if (who?.user) {
-    const saved = await askStartNg({ type: 'startng:score', stats }, 'startng:scoreSaved');
-    if (saved?.ok) $('msg').textContent += saved.result.improved ? ` New best! You are #${saved.result.rank}.` : ` Your best stands at #${saved.result.rank}.`;
-  } else {
-    $('msg').textContent += ' Sign in with start.ng to save your score.';
-  }
-  const top = await askStartNg({ type: 'startng:leaderboard', limit: 5 }, 'startng:leaderboardData');
-  const rows = Array.isArray(top?.entries) ? top.entries : [];
-  $('board').replaceChildren(...rows.map((e) => {
-    const li = document.createElement('li');
-    li.textContent = `${e.name}: ${e.stats?.passengers ?? 0} passengers, ${e.stats?.distance ?? 0} m`;
-    return li;
-  }));
-  $('board').hidden = rows.length === 0;
-}
-$('go').onclick = begin;
-addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowLeft' || e.key === 'a') move(-1);
-  else if (e.key === 'ArrowRight' || e.key === 'd') move(1);
-  else if ((e.key === ' ' || e.key === 'Enter') && !running && document.activeElement !== $('go')) begin();
-});
-cv.addEventListener('pointerdown', (e) => {
-  const r = cv.getBoundingClientRect();
-  move(e.clientX < r.left + r.width / 2 ? -1 : 1);
-});
-reset(); draw();
-</script>
-</body>
-</html>
+html,body{height:100%;margin:0}
+body{background:var(--page);color:var(--ink);font-family:"Nunito","Trebuchet MS",system-ui,sans-serif;display:flex;justify-content:center;overscroll-behavior:none;touch-action:none;user-select:none}
+#wrap{position:relative;width:100%;max-width:480px;height:100%}
+canvas{width:100%;height:100%;display:block}
+#hud{position:absolute;top:12px;left:0;right:0;display:flex;justify-content:center;gap:10px;font-weight:900;font-size:1rem;pointer-events:none}
+#hud span{background:#0d1226cc;border:1px solid var(--line);border-radius:999px;padding:6px 14px}
+#ov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:28px;background:#05070f55;backdrop-filter:blur(2px)}
+#card{width:100%;background:var(--navy);border:2px solid var(--line);border-radius:30px;padding:30px 22px 26px;text-align:center;box-shadow:0 18px 50px #000a}
+.trophy{position:relative;width:112px;height:112px;margin:0 auto 14px;border-radius:50%;background:#8b5cf6;display:grid;place-items:center;font-size:58px}
+.trophy i{position:absolute;right:-2px;bottom:6px;width:38px;height:38px;border-radius:50%;background:#19b27f;color:#fff;font:900 22px/38px "Nunito",sans-serif;font-style:normal}
+h1{margin:0 0 10px;font-size:3.1rem;line-height:1;font-weight:900;color:var(--yellow);letter-spacing:-.02em}
+p{margin:0
