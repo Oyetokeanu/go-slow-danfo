@@ -1,0 +1,8 @@
+{
+  "leaderboard": {
+    "stats": [
+      { "key": "passengers", "label": "Passengers carried", "order": "highest" },
+      { "key": "distance", "label": "Metres driven", "order": "highest" }
+    ]
+  }
+}
