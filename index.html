@@ -20,4 +20,95 @@ canvas{width:100%;height:100%;display:block}
 .trophy{position:relative;width:112px;height:112px;margin:0 auto 14px;border-radius:50%;background:#8b5cf6;display:grid;place-items:center;font-size:58px}
 .trophy i{position:absolute;right:-2px;bottom:6px;width:38px;height:38px;border-radius:50%;background:#19b27f;color:#fff;font:900 22px/38px "Nunito",sans-serif;font-style:normal}
 h1{margin:0 0 10px;font-size:3.1rem;line-height:1;font-weight:900;color:var(--yellow);letter-spacing:-.02em}
-p{margin:0
+p{margin:0 auto 22px;font-size:1.15rem;line-height:1.4;font-weight:700;max-width:26ch}
+button{display:flex;align-items:center;justify-content:center;gap:16px;width:100%;font:900 1.5rem "Nunito",sans-serif;color:#141414;border:0;border-radius:24px;padding:16px 10px;cursor:pointer;background:linear-gradient(#ffe45c,#ffc400);box-shadow:0 6px 18px #ffc40044}
+button:focus-visible{outline:3px solid #fff;outline-offset:3px}
+button b{width:2px;height:26px;background:#14141433}
+[hidden]{display:none!important}
+#pc{position:absolute;top:10px;left:10px;z-index:2;display:flex;align-items:center;gap:8px;padding:4px 12px 4px 4px;border-radius:999px;background:#292a23;color:#fffefa;font-size:.8rem;line-height:1.15}
+#pc img{width:34px;height:34px;border-radius:50%;background:#d8fd71}
+#pc b{display:block;font-size:.85rem}#pc span{opacity:.7}
+#pc button{width:auto;display:block;margin-left:4px;padding:6px 12px;border-radius:999px;font-size:.8rem;background:#d8fd71;box-shadow:none}
+#board{margin:0 0 18px;padding:0;list-style:none;font-size:.95rem;font-weight:700;text-align:left}
+#board li{padding:5px 2px;border-top:1px solid var(--line)}
+#hud{top:58px}
+</style>
+</head>
+<body>
+<div id="wrap">
+<canvas id="c" aria-label="Road"></canvas>
+<div id="pc" hidden><img id="pf" alt=""><div><b id="pn"></b><span id="pa"></span></div><button id="si" hidden>Sign in</button></div>
+<div id="hud"><span id="d">0 m</span><span id="p">0 passengers</span></div>
+<div id="ov"><div id="card">
+<div class="trophy" id="ic">🚕</div>
+<h1 id="ti">Go-slow</h1>
+<p id="tx">Switch lanes, dodge traffic and pick up passengers.</p>
+<ol id="board" hidden></ol>
+<button id="go"><svg width="30" height="30" viewBox="0 0 24 24" fill="#141414"><path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11a2 2 0 0 1 2 2v4h-2v1.5a1.5 1.5 0 0 1-3 0V17H8v1.5a1.5 1.5 0 0 1-3 0V17H3v-4a2 2 0 0 1 2-2zm3-4l-1 4h10l-1-4zm-.5 7a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zm9 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4z"/></svg><b></b><span id="gl">Start driving</span><span>→</span></button>
+</div></div>
+</div>
+<script>
+const cv=document.getElementById('c'),g=cv.getContext('2d'),ov=document.getElementById('ov');
+const START_NG='https://start.ng';let frame,who=null;
+function connectFrame(){frame??=new Promise((res,rej)=>{const el=document.createElement('iframe');el.src=`${START_NG}/connect`;el.hidden=true;el.onload=()=>res(el);el.onerror=rej;document.body.append(el)});return frame}
+async function askStartNg(message,replyType,timeoutMs=5000){const el=await connectFrame();return new Promise(resolve=>{const requestId=Math.random().toString(36).slice(2);
+const done=r=>{clearTimeout(timer);removeEventListener('message',onMessage);resolve(r)};const timer=setTimeout(()=>done(null),timeoutMs);
+function onMessage(e){if(e.origin!==START_NG||e.source!==el.contentWindow)return;if(e.data?.type===replyType&&e.data.requestId===requestId)done(e.data)}
+addEventListener('message',onMessage);el.contentWindow.postMessage({...message,requestId},START_NG)})}
+async function showPlayer(){const reply=await askStartNg({type:'startng:whoami'},'startng:user');who=reply;const p=reply?.user??reply?.guest;if(!p)return;
+document.getElementById('pf').src=p.face;document.getElementById('pn').textContent=p.name;
+document.getElementById('pa').textContent=reply.user?.account?'@'+reply.user.account:'Not signed in';
+const b=document.getElementById('si');b.hidden=!!reply.user;b.onclick=()=>location.href=`${START_NG}/?return_to=${encodeURIComponent(location.origin+location.pathname)}`;
+document.getElementById('pc').hidden=false}
+showPlayer();addEventListener('focus',showPlayer);document.addEventListener('visibilitychange',()=>{if(!document.hidden)showPlayer()});
+let W,H,rl,lw,lane=1,px,cars,pax,trees,dist,got,sp,run=false,last,spawnT,off;
+const COL=['#2f6fe0','#8b5cf6','#e0455f','#19b27f'];
+function size(){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;cv.width=r.width*d;cv.height=r.height*d;g.setTransform(d,0,0,d,0,0);W=r.width;H=r.height;rl=W*.09;lw=(W*.82)/3;px=lx(lane);if(!trees)trees=[];draw()}
+const lx=l=>rl+lw*(l+.5);
+addEventListener('resize',size);
+function reset(){lane=1;px=lx(1);cars=[];pax=[];trees=[];for(let i=0;i<9;i++)trees.push({s:i%2,y:i*H/4.5,r:16+Math.random()*12});dist=0;got=0;sp=230;spawnT=0;off=0}
+function start(){document.getElementById('board').hidden=true;reset();run=true;ov.style.display='none';last=performance.now();requestAnimationFrame(loop)}
+async function over(){run=false;const stats={passengers:got,distance:Math.floor(dist)};
+document.getElementById('ic').innerHTML='🏆<i>✓</i>';document.getElementById('ti').textContent='Go-slow!';
+const tx=document.getElementById('tx'),bd=document.getElementById('board');
+tx.textContent='You carried '+got+' passenger'+(got==1?'':'s')+' over '+stats.distance+' m.';
+document.getElementById('gl').textContent='Drive again';bd.hidden=true;ov.style.display='flex';
+if(who?.user){const s=await askStartNg({type:'startng:score',stats},'startng:scoreSaved');
+if(s?.ok)tx.textContent+=s.result.improved?' New best! You are #'+s.result.rank+'.':' Your best stands at #'+s.result.rank+'.'}
+else tx.textContent+=' Sign in with start.ng to save your score.';
+const top=await askStartNg({type:'startng:leaderboard',limit:5},'startng:leaderboardData');
+const rows=Array.isArray(top?.entries)?top.entries:[];
+bd.replaceChildren(...rows.map(e=>{const li=document.createElement('li');li.textContent=e.name+': '+(e.stats?.passengers??0)+' passengers, '+(e.stats?.distance??0)+' m';return li}));
+bd.hidden=rows.length===0}
+function spawn(){const l=Math.random()*3|0;cars.push({l,y:-90,v:Math.random()*60,c:COL[Math.random()*4|0]});
+if(Math.random()<.45){const q=(l+1+(Math.random()*2|0))%3;pax.push({l:q,y:-140-Math.random()*60})}}
+function loop(n){if(!run)return;const dt=Math.min((n-last)/1000,.05);last=n;
+sp=Math.min(230+dist*.6,560);dist+=sp*dt/14;off=(off+sp*dt)%80;spawnT-=dt;if(spawnT<=0){spawn();spawnT=Math.max(.45,1.1-dist/900)}
+px+=(lx(lane)-px)*Math.min(1,dt*14);
+for(const c of cars){c.y+=(sp-c.v)*dt;if(c.l==lane&&Math.abs(c.y-(H-110))<70&&Math.abs(px-lx(c.l))<lw*.5)return over()}
+for(const p of pax){p.y+=sp*dt;if(!p.d&&p.l==lane&&Math.abs(p.y-(H-110))<50){p.d=1;got++}}
+cars=cars.filter(c=>c.y<H+100);pax=pax.filter(p=>p.y<H+60&&!p.d);
+for(const t of trees){t.y+=sp*dt;if(t.y>H+40){t.y=-40;t.r=16+Math.random()*12}}
+document.getElementById('d').textContent=Math.floor(dist)+' m';document.getElementById('p').textContent=got+(got==1?' passenger':' passengers');
+draw();requestAnimationFrame(loop)}
+function car(x,y,c){g.fillStyle='#0006';g.beginPath();g.roundRect(x-20,y-42,44,92,10);g.fill();
+g.fillStyle=c;g.beginPath();g.roundRect(x-22,y-46,44,92,11);g.fill();
+g.fillStyle='#0a1020';g.beginPath();g.roundRect(x-16,y-22,32,26,5);g.fill();g.beginPath();g.roundRect(x-15,y+22,30,14,4);g.fill();
+g.fillStyle='#ffffff30';g.fillRect(x-4,y-44,8,88);g.fillStyle='#ffe9a0';g.fillRect(x-19,y+43,8,3);g.fillRect(x+11,y+43,8,3)}
+function draw(){if(!W)return;g.fillStyle='#161b2e';g.fillRect(0,0,W,H);
+g.fillStyle='#4a5470';g.fillRect(0,0,rl*.7,H);g.fillRect(W-rl*.7,0,rl*.7,H);
+g.fillStyle='#8a93ad';g.fillRect(rl*.7,0,3,H);g.fillRect(W-rl*.7-3,0,3,H);
+g.fillStyle='#8fa0c0';for(let l=1;l<3;l++)for(let y=-80+off;y<H;y+=80)g.fillRect(rl+lw*l-2,y,4,38);
+for(const t of trees||[]){g.fillStyle='#2f7d32';g.beginPath();g.arc(t.s?W-8:8,t.y,t.r,0,7);g.fill();g.fillStyle='#4aa148';g.beginPath();g.arc(t.s?W-12:12,t.y-4,t.r*.6,0,7);g.fill()}
+for(const p of pax||[]){const x=lx(p.l);g.fillStyle='#19b27f';g.beginPath();g.roundRect(x-9,p.y-4,18,24,5);g.fill();g.fillStyle='#d5d9e6';g.beginPath();g.arc(x,p.y-12,10,0,7);g.fill()}
+for(const c of cars||[])car(lx(c.l),c.y,c.c);
+car(px||lx(1),H-110,'#f7c600')}
+function setLane(l){lane=Math.max(0,Math.min(2,l))}
+cv.addEventListener('pointerdown',e=>{if(!run)return;const r=cv.getBoundingClientRect();setLane(Math.floor((e.clientX-r.left-rl)/lw))});
+cv.addEventListener('pointermove',e=>{if(!run||!e.buttons)return;const r=cv.getBoundingClientRect();setLane(Math.floor((e.clientX-r.left-rl)/lw))});
+addEventListener('keydown',e=>{if(e.key=='ArrowLeft'||e.key=='a')setLane(lane-1);else if(e.key=='ArrowRight'||e.key=='d')setLane(lane+1);else if((e.key==' '||e.key=='Enter')&&!run&&document.activeElement!==document.getElementById('go'))start()});
+document.getElementById('go').onclick=start;
+reset();size();
+</script>
+</body>
+</html>
